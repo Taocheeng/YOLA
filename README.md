@@ -186,6 +186,35 @@ python tools/test.py configs/tood/tood_yola_exdark.py [model path] --out [NAME].
 ```
 
 
+
+## SAM3 Integration Guide
+
+如果你希望将 YOLA 增强后的特征送入 SAM3（替换 YOLO/TOOD 检测头），请参考：`docs/sam3_integration_guide.md`。
+
+本仓库也提供了可直接改造的代码骨架：
+
+- `mmdet/models/detectors/yola_sam3.py`（YOLA + SAM3 检测器）
+- `mmdet/models/detectors/sam3_adapter.py`（SAM3 适配器，支持读取 ExDark/DarkFace label prompt）
+- `configs/sam3/sam3_yola_exdark.py` 和 `configs/sam3/sam3_yola_darkface.py`（示例配置，包含占位路径）
+- `scripts/export_metrics.py`（只导出量化指标 json，不保存处理图像）
+
+快速运行（ExDark）：
+
+```bash
+# 先检查 SAM3 路径/构建函数/label 覆盖
+python scripts/verify_sam3_setup.py \
+  --sam3-repo /home/taocheng/sam3/sam3/sam3 \
+  --sam3-module sam3.build \
+  --sam3-builder build_sam3_detector \
+  --label-file /home/taocheng/YOLA_Project/data/exdarkv3/labels.txt \
+  --num-classes 12
+
+# 一键训练+测试+导出 metrics_summary.json
+bash scripts/run_sam3_exdark.sh
+```
+
+> 注意：如果你的 SAM3 API 不是 `build_sam3_detector/predict/loss` 这些函数名，请在 `mmdet/models/detectors/sam3_adapter.py` 里改成你的真实函数名。
+
 ## Citation
 If our work help to your research, please cite our paper, thx.
 ```
