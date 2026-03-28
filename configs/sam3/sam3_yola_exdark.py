@@ -9,6 +9,12 @@ data_preprocessor = dict(
     bgr_to_rgb=True,
     pad_size_divisor=32)
 
+# ExDark official class names (12 classes)
+exdark_classes = [
+    'Bicycle', 'Boat', 'Bottle', 'Bus', 'Car', 'Cat',
+    'Chair', 'Cup', 'Dog', 'Motorbike', 'People', 'Table'
+]
+
 model = dict(
     type='YOLAWithSAM3',
     kernel_nums=8,
@@ -16,6 +22,7 @@ model = dict(
     Gtheta=[0.6, 0.8],
     loss_consistency=dict(type='SmoothL1Loss', loss_weight=0.01, reduction='sum'),
     data_preprocessor=data_preprocessor,
+    # Kept for compatibility; SAM3 path now consumes enhanced image directly.
     backbone=dict(
         type='ResNet',
         depth=50,
@@ -33,17 +40,12 @@ model = dict(
         add_extra_convs='on_output',
         num_outs=5),
     sam3_head=dict(
-        type='SAM3Adapter',
-        sam3_repo_path='/home/taocheng/sam3/sam3/sam3',
-        sam3_module='sam3.build',
-        sam3_builder='build_sam3_detector',
-        sam3_kwargs=dict(
-            # 占位符：按你的 SAM3 复刻代码实际参数替换
-            checkpoint='/home/taocheng/sam3/checkpoints/[YOUR_SAM3_CKPT].pth',
-            device='cuda'),
-        prompt_label_file='/home/taocheng/YOLA_Project/data/exdarkv3/labels.txt',
-        prompt_template='detect {label} in low-light scene',
-        num_classes=12),
+        type='SAM3DetectorWrapper',
+        checkpoint_path='/home/taocheng/sam3/checkpoints/[YOUR_SAM3_CKPT].pth',
+        device='cuda',
+        class_names=exdark_classes,
+        resolution=1008,
+        confidence_threshold=0.3),
     train_cfg=dict(),
     test_cfg=dict(
         score_thr=0.01,
@@ -51,7 +53,7 @@ model = dict(
         max_per_img=300))
 
 dataset_type = 'ExDarkVocDataset'
-data_root = '/home/taocheng/YOLA_Project/data/exdarkv3/'
+data_root = '/home/taocheng/YOLA_Project/mmdetection/data/EXDark/'
 backend_args = None
 
 train_pipeline = [
@@ -102,14 +104,14 @@ val_dataloader = dict(
     dataset=dict(
         type=dataset_type,
         data_root=data_root,
-        ann_file='test.txt',
+        ann_file='val.txt',
         data_prefix=dict(sub_data_root=''),
         test_mode=True,
         pipeline=test_pipeline,
         backend_args=backend_args))
 
 test_dataloader = val_dataloader
-val_evaluator = dict(type='VOCMetric', metric='mAP', eval_mode='area')
+val_evaluator = dict(type='VOCMetric', metric='mAP', eval_mode='11points')
 test_evaluator = val_evaluator
 
 train_cfg = dict(max_epochs=24, val_interval=1)
