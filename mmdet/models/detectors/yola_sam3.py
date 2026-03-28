@@ -15,8 +15,8 @@ from .yola_utils import IIBlock
 class YOLAWithSAM3(BaseDetector):
     """YOLA detector with SAM3 bbox predictor.
 
-    - Keep YOLA illumination-invariant module.
-    - Replace YOLO/TOOD bbox head with SAM3 adapter head.
+    We keep YOLA's illumination invariant module and pass the enhanced images
+    directly to SAM3 detector wrapper (instead of YOLO/TOOD heads).
     """
 
     def __init__(
@@ -36,9 +36,10 @@ class YOLAWithSAM3(BaseDetector):
         Gtheta: List[float] = [0.6, 0.8],
     ) -> None:
         super().__init__(data_preprocessor=data_preprocessor, init_cfg=init_cfg)
-        self.backbone = MODELS.build(backbone)
-        if neck is not None:
-            self.neck = MODELS.build(neck)
+        # Keep backbone/neck as optional modules for compatibility with existing
+        # configs/checkpoints, although SAM3 path only requires enhanced image.
+        self.backbone = MODELS.build(backbone) if backbone is not None else None
+        self.neck = MODELS.build(neck) if neck is not None else None
 
         sam3_head = sam3_head.copy()
         sam3_head.update(train_cfg=train_cfg)
@@ -50,16 +51,14 @@ class YOLAWithSAM3(BaseDetector):
         self.iim = IIBlock(kernel_nums, kernel_size, Gtheta)
         self.loss_consistency = MODELS.build(loss_consistency)
 
-    def extract_feat(self, batch_inputs: Tensor) -> Tuple[Tensor]:
-        out, feats = self.iim(batch_inputs)
-        out = self.backbone(out)
-        fpn_out = self.neck(out)
-        return fpn_out, feats
+    def extract_feat(self, batch_inputs: Tensor) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
+        enhanced, feats = self.iim(batch_inputs)
+        return enhanced, feats
 
     def loss(self, batch_inputs: Tensor, batch_data_samples: SampleList) -> Union[dict, list]:
-        x, feats = self.extract_feat(batch_inputs)
+        enhanced_images, feats = self.extract_feat(batch_inputs)
         feat_ii, feat_ii_gma = feats
-        losses = self.sam3_head.loss(x, batch_data_samples)
+        losses = self.sam3_head.loss(enhanced_images, batch_data_samples)
         losses.update({'loss_consist': self.loss_consistency(feat_ii, feat_ii_gma)})
         return losses
 
@@ -69,8 +68,10 @@ class YOLAWithSAM3(BaseDetector):
         batch_data_samples: SampleList,
         rescale: bool = True,
     ) -> SampleList:
-        x, _ = self.extract_feat(batch_inputs)
-        results_list = self.sam3_head.predict(x, batch_data_samples, rescale=rescale)
+        enhanced_images, _ = self.extract_feat(batch_inputs)
+        results_list = self.sam3_head.predict(
+            enhanced_images, batch_data_samples, rescale=rescale
+        )
         batch_data_samples = self.add_pred_to_datasample(batch_data_samples, results_list)
         return batch_data_samples
 
@@ -79,6 +80,7 @@ class YOLAWithSAM3(BaseDetector):
         batch_inputs: Tensor,
         batch_data_samples: OptSampleList = None,
     ) -> Tuple[List[Tensor]]:
-        x, _ = self.extract_feat(batch_inputs)
-        results = self.sam3_head.forward(x)
-        return results
+        _ = batch_data_samples
+        enhanced_images, _ = self.extract_feat(batch_inputs)
+        results = self.sam3_head.forward(enhanced_images)
+        return (results,)
